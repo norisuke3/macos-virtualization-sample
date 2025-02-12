@@ -77,6 +77,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         virtualMachineConfiguration.networkDevices = [MacOSVirtualMachineConfigurationHelper.createNetworkDeviceConfiguration()]
         virtualMachineConfiguration.storageDevices = [MacOSVirtualMachineConfigurationHelper.createBlockDeviceConfiguration()]
 
+        // Add shared directory configuration
+        let sharedDirectory = VZSharedDirectory(url: URL(fileURLWithPath: "/Users/nori/dev/go/src/github.com/norisuke3"), readOnly: false)
+        let share = VZSingleDirectoryShare(directory: sharedDirectory)
+        let fileSystemDevice = VZVirtioFileSystemDeviceConfiguration(tag: "com.apple.virtio-fs.automount")
+        fileSystemDevice.share = share
+        virtualMachineConfiguration.directorySharingDevices = [fileSystemDevice]
+
         virtualMachineConfiguration.pointingDevices = [MacOSVirtualMachineConfigurationHelper.createPointingDeviceConfiguration()]
         virtualMachineConfiguration.keyboards = [MacOSVirtualMachineConfigurationHelper.createKeyboardConfiguration()]
 
