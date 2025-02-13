@@ -7,7 +7,7 @@ Constants that point to the various file URLs that the sample code uses.
 
 import Foundation
 
-let vmBundlePath = NSHomeDirectory() + "/VM.bundle/"
+let vmBundlePath = NSHomeDirectory() + "/VM.linux.bundle/"
 
 let vmBundleURL = URL(fileURLWithPath: vmBundlePath)
 
@@ -24,3 +24,5 @@ let restoreImageURL = vmBundleURL.appendingPathComponent("RestoreImage.ipsw")
 let saveFileURL = vmBundleURL.appendingPathComponent("SaveFile.vzvmsave")
 
 let sharedDirectoryPath = "/Users/nori/dev/go/src/github.com/norisuke3"
+
+let linuxISOPath = NSHomeDirectory() + "/linux.iso"

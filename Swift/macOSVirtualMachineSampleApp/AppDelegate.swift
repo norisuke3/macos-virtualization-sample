@@ -16,66 +16,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @IBOutlet weak var virtualMachineView: VZVirtualMachineView!
 
-    private var virtualMachineResponder: MacOSVirtualMachineDelegate?
-
     private var virtualMachine: VZVirtualMachine!
-
-    // MARK: Create the Mac platform configuration.
-
-#if arch(arm64)
-    private func createMacPlaform() -> VZMacPlatformConfiguration {
-        let macPlatform = VZMacPlatformConfiguration()
-
-        let auxiliaryStorage = VZMacAuxiliaryStorage(contentsOf: auxiliaryStorageURL)
-        macPlatform.auxiliaryStorage = auxiliaryStorage
-
-        if !FileManager.default.fileExists(atPath: vmBundlePath) {
-            fatalError("Missing Virtual Machine Bundle at \(vmBundlePath). Run InstallationTool first to create it.")
-        }
-
-        // Retrieve the hardware model and save this value to disk
-        // during installation.
-        guard let hardwareModelData = try? Data(contentsOf: hardwareModelURL) else {
-            fatalError("Failed to retrieve hardware model data.")
-        }
-
-        guard let hardwareModel = VZMacHardwareModel(dataRepresentation: hardwareModelData) else {
-            fatalError("Failed to create hardware model.")
-        }
-
-        if !hardwareModel.isSupported {
-            fatalError("The hardware model isn't supported on the current host")
-        }
-        macPlatform.hardwareModel = hardwareModel
-
-        // Retrieve the machine identifier and save this value to disk
-        // during installation.
-        guard let machineIdentifierData = try? Data(contentsOf: machineIdentifierURL) else {
-            fatalError("Failed to retrieve machine identifier data.")
-        }
-
-        guard let machineIdentifier = VZMacMachineIdentifier(dataRepresentation: machineIdentifierData) else {
-            fatalError("Failed to create machine identifier.")
-        }
-        macPlatform.machineIdentifier = machineIdentifier
-
-        return macPlatform
-    }
 
     // MARK: Create the virtual machine configuration and instantiate the virtual machine.
 
     private func createVirtualMachine() {
         let virtualMachineConfiguration = VZVirtualMachineConfiguration()
 
-        virtualMachineConfiguration.platform = createMacPlaform()
-        virtualMachineConfiguration.bootLoader = MacOSVirtualMachineConfigurationHelper.createBootLoader()
-        virtualMachineConfiguration.cpuCount = MacOSVirtualMachineConfigurationHelper.computeCPUCount()
-        virtualMachineConfiguration.memorySize = MacOSVirtualMachineConfigurationHelper.computeMemorySize()
+        // Set up CPU and memory
+        virtualMachineConfiguration.cpuCount = 4
+        virtualMachineConfiguration.memorySize = 4 * 1024 * 1024 * 1024 // 4GB
 
-        virtualMachineConfiguration.audioDevices = [MacOSVirtualMachineConfigurationHelper.createSoundDeviceConfiguration()]
-        virtualMachineConfiguration.graphicsDevices = [MacOSVirtualMachineConfigurationHelper.createGraphicsDeviceConfiguration()]
-        virtualMachineConfiguration.networkDevices = [MacOSVirtualMachineConfigurationHelper.createNetworkDeviceConfiguration()]
-        virtualMachineConfiguration.storageDevices = [MacOSVirtualMachineConfigurationHelper.createBlockDeviceConfiguration()]
+        // Set up EFI boot loader with variable store
+        let efiVariableStore = try! VZEFIVariableStore(creatingVariableStoreAt: auxiliaryStorageURL)
+        let bootLoader = VZEFIBootLoader(variableStore: efiVariableStore)
+        virtualMachineConfiguration.bootLoader = bootLoader
+
+        // Set up graphics device
+        let graphicsDevice = VZVirtioGraphicsDeviceConfiguration()
+        let display = VZVirtioGraphicsDisplayConfiguration(widthInPixels: 1280, heightInPixels: 800)
+        graphicsDevice.displays = [display]
+        virtualMachineConfiguration.graphicsDevices = [graphicsDevice]
+
+        // Set up storage devices
+        let mainDiskAttachment = try! VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
+        let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
+
+        // Set up USB mass storage for ISO
+        let isoAttachment = try! VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: linuxISOPath), readOnly: true)
+        let usbMassStorage = VZUSBMassStorageDeviceConfiguration(attachment: isoAttachment)
+        
+        virtualMachineConfiguration.storageDevices = [mainDisk, usbMassStorage]
+
+        // Set up network device
+        let networkDevice = VZVirtioNetworkDeviceConfiguration()
+        networkDevice.attachment = VZNATNetworkDeviceAttachment()
+        virtualMachineConfiguration.networkDevices = [networkDevice]
+
+        // Set up input devices
+        let keyboard = VZUSBKeyboardConfiguration()
+        virtualMachineConfiguration.keyboards = [keyboard]
+        
+        let pointingDevice = VZUSBScreenCoordinatePointingDeviceConfiguration()
+        virtualMachineConfiguration.pointingDevices = [pointingDevice]
 
         // Add shared directory configuration
         let sharedDirectory = VZSharedDirectory(url: URL(fileURLWithPath: sharedDirectoryPath), readOnly: false)
@@ -83,9 +66,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let fileSystemDevice = VZVirtioFileSystemDeviceConfiguration(tag: "com.apple.virtio-fs.automount")
         fileSystemDevice.share = share
         virtualMachineConfiguration.directorySharingDevices = [fileSystemDevice]
-
-        virtualMachineConfiguration.pointingDevices = [MacOSVirtualMachineConfigurationHelper.createPointingDeviceConfiguration()]
-        virtualMachineConfiguration.keyboards = [MacOSVirtualMachineConfigurationHelper.createKeyboardConfiguration()]
 
         try! virtualMachineConfiguration.validate()
 
@@ -134,8 +114,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 #if arch(arm64)
         DispatchQueue.main.async { [self] in
             createVirtualMachine()
-            virtualMachineResponder = MacOSVirtualMachineDelegate()
-            virtualMachine.delegate = virtualMachineResponder
             virtualMachineView.virtualMachine = virtualMachine
             virtualMachineView.capturesSystemKeys = true
 
@@ -144,16 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 virtualMachineView.automaticallyReconfiguresDisplay = true
             }
 
-            if #available(macOS 14.0, *) {
-                let fileManager = FileManager.default
-                if fileManager.fileExists(atPath: saveFileURL.path) {
-                    restoreVirtualMachine()
-                } else {
-                    startVirtualMachine()
-                }
-            } else {
-                startVirtualMachine()
-            }
+            startVirtualMachine()
         }
 #endif
     }
