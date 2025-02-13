@@ -22,3 +22,5 @@ let machineIdentifierURL = vmBundleURL.appendingPathComponent("MachineIdentifier
 let restoreImageURL = vmBundleURL.appendingPathComponent("RestoreImage.ipsw")
 
 let saveFileURL = vmBundleURL.appendingPathComponent("SaveFile.vzvmsave")
+
+let sharedDirectoryPath = "/Users/nori/dev/go/src/github.com/norisuke3"
