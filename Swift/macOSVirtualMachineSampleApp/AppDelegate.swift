@@ -21,14 +21,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Create the virtual machine configuration and instantiate the virtual machine.
 
     private func createVirtualMachine() {
+        // Check if VM is installed
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: vmBundlePath),
+              fileManager.fileExists(atPath: diskImageURL.path),
+              fileManager.fileExists(atPath: auxiliaryStorageURL.path) else {
+            fatalError("VM is not installed. Please run InstallationTool first to set up the Linux VM.")
+        }
+
         let virtualMachineConfiguration = VZVirtualMachineConfiguration()
 
         // Set up CPU and memory
         virtualMachineConfiguration.cpuCount = 4
         virtualMachineConfiguration.memorySize = 4 * 1024 * 1024 * 1024 // 4GB
 
-        // Set up EFI boot loader with variable store
-        let efiVariableStore = try! VZEFIVariableStore(creatingVariableStoreAt: auxiliaryStorageURL)
+        // Set up EFI boot loader with existing variable store
+        guard let efiVariableStore = try? VZEFIVariableStore(url: auxiliaryStorageURL) else {
+            fatalError("Failed to load EFI variable store. The VM might be corrupted.")
+        }
         let bootLoader = VZEFIBootLoader(variableStore: efiVariableStore)
         virtualMachineConfiguration.bootLoader = bootLoader
 
@@ -39,14 +49,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         virtualMachineConfiguration.graphicsDevices = [graphicsDevice]
 
         // Set up storage devices
-        let mainDiskAttachment = try! VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
+        guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false) else {
+            fatalError("Failed to attach main disk. The disk image might be corrupted.")
+        }
         let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
-
-        // Set up USB mass storage for ISO
-        let isoAttachment = try! VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: linuxISOPath), readOnly: true)
-        let usbMassStorage = VZUSBMassStorageDeviceConfiguration(attachment: isoAttachment)
-        
-        virtualMachineConfiguration.storageDevices = [mainDisk, usbMassStorage]
+        virtualMachineConfiguration.storageDevices = [mainDisk]
 
         // Set up network device
         let networkDevice = VZVirtioNetworkDeviceConfiguration()
@@ -112,18 +119,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
 #if arch(arm64)
+        print("Starting Linux virtual machine...")
         DispatchQueue.main.async { [self] in
             createVirtualMachine()
             virtualMachineView.virtualMachine = virtualMachine
             virtualMachineView.capturesSystemKeys = true
 
             if #available(macOS 14.0, *) {
-                // Configure the app to automatically respond to changes in the display size.
                 virtualMachineView.automaticallyReconfiguresDisplay = true
             }
 
             startVirtualMachine()
         }
+#else
+        print("This app can only run on Apple Silicon Macs.")
 #endif
     }
 
